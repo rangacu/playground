@@ -1,0 +1,363 @@
+from flask import Flask, render_template, request, jsonify
+import time
+import trino
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import numpy as np
+import mysql.connector
+import uuid
+import json
+from datetime import datetime
+import logging
+
+app = Flask(__name__)
+
+# Set up logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+# MySQL connection details
+MYSQL_CONFIG = {
+    'host': 'localhost',
+    'user': 'root',
+    'password': 'ranga',
+    'database': 'trino_load_test'
+}
+
+# Initialize MySQL connection
+def get_mysql_connection():
+    try:
+        return mysql.connector.connect(**MYSQL_CONFIG)
+    except mysql.connector.Error as e:
+        logger.error(f"Error connecting to MySQL: {str(e)}")
+        return None
+
+# Create the load_test_results table if it doesn't exist
+def initialize_mysql_table():
+    conn = get_mysql_connection()
+    if not conn:
+        return
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS load_test_results (
+                id VARCHAR(36) PRIMARY KEY,
+                timestamp TIMESTAMP,
+                queries JSON,
+                concurrency INTEGER,
+                aggregated_metrics JSON,
+                individual_results JSON,
+                testtitle varchar(1000)
+            )
+        ''')
+        conn.commit()
+    except mysql.connector.Error as e:
+        logger.error(f"Error initializing MySQL table: {str(e)}")
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+# Call this function when the app starts
+initialize_mysql_table()
+
+# Trino connection details
+def get_trino_connection():
+    try:
+        return trino.dbapi.connect(
+            host='localhost',
+            port=8080,
+            user='ranga'
+        )
+    except Exception as e:
+        logger.error(f"Error connecting to Trino: {str(e)}")
+        return None
+
+# Function to execute a query and return KPIs
+def execute_query(query, query_id_suffix):
+    conn = trino.dbapi.connect(
+        host='localhost',
+        port=8080,
+        user='ranga'
+    )
+    cur = conn.cursor()
+    query_with_id = f"{query} -- {query_id_suffix}"  # Append a unique identifier to the query
+    try:
+        start_time = time.time()
+        cur.execute(query_with_id)
+        query_end_time = time.time()
+
+        results = cur.fetchall()
+        end_time = time.time()
+
+        latency = end_time - start_time
+
+        query_metrics = {}
+        time.sleep(1)
+        
+        metrics_query = f"""
+        SELECT
+            q.query_id,
+            q.state,
+            q.user,
+            q.source,
+            q.query,
+            q.queued_time_ms,
+            q.analysis_time_ms,
+            q.planning_time_ms,
+            q.created,
+            q.started,
+            q."end",
+            q.error_type,
+            q.error_code,
+            SUM(t.split_cpu_time_ms) AS cpu_time_ms,
+            SUM(t.split_scheduled_time_ms) AS planning_time_ms,
+            MAX(t.physical_input_bytes) AS peak_user_memory_bytes,
+            MAX(t.physical_written_bytes) AS peak_total_memory_bytes,
+            SUM(t.output_rows) AS output_rows,
+            SUM(t.output_bytes) AS output_bytes
+        FROM
+            system.runtime.queries q
+        JOIN
+            system.runtime.tasks t ON q.query_id = t.query_id
+        WHERE
+            q.query = '{query_with_id.replace("'", "''")}'
+            AND q.state = 'FINISHED'
+        GROUP BY
+            q.query_id, q.state, q.user, q.source, q.query, q.queued_time_ms, q.analysis_time_ms, q.planning_time_ms, q.created, q.started, q."end", q.error_type, q.error_code
+        ORDER BY
+            q.created DESC
+        LIMIT 1
+        """
+        cur.execute(metrics_query)
+        metrics_result = cur.fetchone()
+
+        if metrics_result:
+            query_metrics = {
+                'query_id': metrics_result[0],
+                'state': metrics_result[1],
+                'user': metrics_result[2],
+                'source': metrics_result[3],
+                'query': metrics_result[4],
+                'queued_time_ms': metrics_result[5],
+                'analysis_time_ms': metrics_result[6],
+                'planning_time_ms': metrics_result[7],
+                'created': metrics_result[8],
+                'started': metrics_result[9],
+                'end': metrics_result[10],
+                'error_type': metrics_result[11],
+                'error_code': metrics_result[12],
+                'cpu_time_ms': metrics_result[13],
+                'planning_cpu_time_ms': metrics_result[14],
+                'peak_user_memory_bytes': metrics_result[15],
+                'peak_total_memory_bytes': metrics_result[16],
+                'output_rows': metrics_result[17],
+                'output_bytes': metrics_result[18],
+            }
+
+        return {
+            'query': query_with_id,
+            'latency': latency,
+            'additional_metrics': query_metrics
+        }
+    except Exception as e:
+        logger.error(f"Error executing query: {str(e)}")
+        return None
+
+# Function to perform load test with concurrent queries
+# Function to perform load test with concurrent queries
+def load_test(queries, concurrency):
+    logger.debug(f"Starting load test with concurrency: {concurrency} and queries: {queries}")
+    kpis = []
+    with ThreadPoolExecutor(max_workers=concurrency) as executor:
+        future_to_query = {executor.submit(execute_query, query, str(uuid.uuid4())): query for query in queries}
+        for future in as_completed(future_to_query):
+            query = future_to_query[future]
+            try:
+                kpi = future.result()
+                if kpi:
+                    kpis.append(kpi)
+            except Exception as exc:
+                logger.error(f'Query {query} generated an exception: {exc}')
+    logger.debug(f"Load test completed with KPIs: {kpis}")
+    return kpis
+
+
+# Function to calculate percentiles
+def calculate_percentiles(values):
+    if not values:
+        return None, None
+    p95 = np.percentile(values, 95)
+    p99 = np.percentile(values, 99)
+    return p95, p99
+
+# Function to calculate basic metrics
+def calculate_basic_metrics(values):
+    if not values:
+        return None, None, None, None
+    avg = np.mean(values)
+    min_val = np.min(values)
+    max_val = np.max(values)
+    stddev = np.std(values)
+    return avg, min_val, max_val, stddev
+
+def datetime_serializer(obj):
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    raise TypeError(f"Type {type(obj)} not serializable")
+
+def store_results_in_mysql(testtitle, queries, concurrency, aggregated_metrics, kpi_results):
+    conn = get_mysql_connection()
+    if not conn:
+        logger.error("MySQL connection is not available")
+        return None
+
+    try:
+        cursor = conn.cursor()
+        test_id = str(uuid.uuid4())
+        timestamp = datetime.now()
+        if testtitle is None:
+            testtitle = "Untitled Test"  # Default value if testtitle is not provided
+
+        for kpi in kpi_results:
+            for key, value in kpi['additional_metrics'].items():
+                if isinstance(value, datetime):
+                    kpi['additional_metrics'][key] = value.isoformat()
+
+        cursor.execute('''
+            INSERT INTO load_test_results (id, testtitle, timestamp, queries, concurrency, aggregated_metrics, individual_results)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (test_id, testtitle, timestamp, json.dumps(queries), concurrency, 
+              json.dumps(aggregated_metrics, default=datetime_serializer), 
+              json.dumps(kpi_results, default=datetime_serializer)))
+        
+        conn.commit()
+        return test_id
+    except mysql.connector.Error as e:
+        logger.error(f"Error storing results in MySQL: {str(e)}")
+        return None
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+def get_test_results(test_id=None):
+    conn = get_mysql_connection()
+    if not conn:
+        logger.error("MySQL connection is not available")
+        return []
+
+    try:
+        cursor = conn.cursor(dictionary=True)
+        if test_id:
+            cursor.execute('''
+                SELECT * FROM load_test_results WHERE id = %s
+            ''', (test_id,))
+        else:
+            cursor.execute('''
+                SELECT id, testtitle, timestamp, concurrency FROM load_test_results ORDER BY timestamp DESC LIMIT 10
+            ''')
+        
+        results = cursor.fetchall()
+        
+        for result in results:
+            result['timestamp'] = result['timestamp'].isoformat()
+        
+        return results
+    except mysql.connector.Error as e:
+        logger.error(f"Error retrieving test results: {str(e)}")
+        return []
+    finally:
+        if conn.is_connected():
+            cursor.close()
+            conn.close()
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        queries = request.form.get('queries').split('||')
+        concurrency = int(request.form.get('concurrency'))
+        testtitle = request.form.get('testtitle')
+        
+        if not testtitle:
+            testtitle = "Untitled Test"
+        logger.debug(f"Received {len(queries)} queries for load test with concurrency {concurrency}")
+        
+        # Ensure the queries list has enough entries
+        if len(queries) < concurrency:
+            queries = queries * (concurrency // len(queries)) + queries[:concurrency % len(queries)]
+
+        logger.debug(f"Running load test with {len(queries)} queries and concurrency {concurrency}")
+        
+        kpi_results = load_test(queries, concurrency)
+
+        if not kpi_results:
+            return render_template('error.html', message="No results were returned from the load test.")
+
+        latencies = [kpi['latency'] for kpi in kpi_results]
+        queued_times = [kpi['additional_metrics'].get('queued_time_ms', 0) for kpi in kpi_results]
+        analysis_times = [kpi['additional_metrics'].get('analysis_time_ms', 0) for kpi in kpi_results]
+        planning_times = [kpi['additional_metrics'].get('planning_time_ms', 0) for kpi in kpi_results]
+
+        p95_latency, p99_latency = calculate_percentiles(latencies)
+        p95_queued_time, p99_queued_time = calculate_percentiles(queued_times)
+        p95_analysis_time, p99_analysis_time = calculate_percentiles(analysis_times)
+        p95_planning_time, p99_planning_time = calculate_percentiles(planning_times)
+
+        avg_latency, min_latency, max_latency, stddev_latency = calculate_basic_metrics(latencies)
+        avg_queued_time, min_queued_time, max_queued_time, stddev_queued_time = calculate_basic_metrics(queued_times)
+        avg_analysis_time, min_analysis_time, max_analysis_time, stddev_analysis_time = calculate_basic_metrics(analysis_times)
+        avg_planning_time, min_planning_time, max_planning_time, stddev_planning_time = calculate_basic_metrics(planning_times)
+
+        error_count = sum(1 for kpi in kpi_results if kpi['additional_metrics'].get('state') == 'FAILED')
+        total_requests = len(kpi_results)
+        error_rate = (error_count / total_requests) * 100 if total_requests > 0 else 0
+        throughput = total_requests / sum(latencies) if sum(latencies) > 0 else 0
+
+        aggregated_metrics = {
+            'avg_latency': avg_latency,
+            'min_latency': min_latency,
+            'max_latency': max_latency,
+            'stddev_latency': stddev_latency,
+            'p95_latency': p95_latency,
+            'p99_latency': p99_latency,
+            'avg_queued_time': avg_queued_time,
+            'avg_analysis_time': avg_analysis_time,
+            'avg_planning_time': avg_planning_time,
+            'error_rate': error_rate,
+            'throughput': throughput
+        }
+
+        test_id = store_results_in_mysql(testtitle, queries, concurrency, aggregated_metrics, kpi_results)
+
+        return render_template('results.html', 
+                               test_id=test_id,
+                               testtitle=testtitle,
+                               kpi_results=kpi_results,
+                               **aggregated_metrics)
+
+    recent_tests = get_test_results()
+    return render_template('index.html', recent_tests=recent_tests)
+
+
+@app.route('/results/<test_id>')
+def view_results(test_id):
+    results = get_test_results(test_id)
+    if not results:
+        return render_template('error.html', message="Test not found"), 404
+
+    result = results[0]
+    aggregated_metrics = json.loads(result['aggregated_metrics'])
+    kpi_results = json.loads(result['individual_results'])
+
+    return render_template('results.html', 
+                           test_id=result['id'],
+                           testtitle=result['testtitle'],
+                           timestamp=result['timestamp'],
+                           queries=json.loads(result['queries']),
+                           concurrency=result['concurrency'],
+                           kpi_results=kpi_results,
+                           **aggregated_metrics)
+
+if __name__ == '__main__':
+    app.run(debug=True)
