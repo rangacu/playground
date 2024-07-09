@@ -1,0 +1,99 @@
+<!-- templates/results.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trino Load Test Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="mb-4">Trino Load Test Results</h1>
+        <p><strong>Test ID:</strong> {{ test_id }}</p>
+        <p><strong>Test Title:</strong> {{ testtitle }}</p>
+        {% if timestamp %}
+        <p><strong>Timestamp:</strong> {{ timestamp }}</p>
+        {% endif %}
+        {% if concurrency %}
+        <p><strong>Concurrency:</strong> {{ concurrency }}</p>
+        {% endif %}
+        
+        <h2>Aggregated Metrics</h2>
+        <table class="table table-bordered">
+            <tr>
+                <th>Metric</th>
+                <th>Value</th>
+            </tr>
+            <tr>
+                <td>Average Latency</td>
+                <td>{{ "%.2f"|format(avg_latency) }} seconds</td>
+            </tr>
+            <tr>
+                <td>Min Latency</td>
+                <td>{{ "%.2f"|format(min_latency) }} seconds</td>
+            </tr>
+            <tr>
+                <td>Max Latency</td>
+                <td>{{ "%.2f"|format(max_latency) }} seconds</td>
+            </tr>
+            <tr>
+                <td>Standard Deviation of Latency</td>
+                <td>{{ "%.2f"|format(stddev_latency) }} seconds</td>
+            </tr>
+            <tr>
+                <td>95th Percentile Latency</td>
+                <td>{{ "%.2f"|format(p95_latency) }} seconds</td>
+            </tr>
+            <tr>
+                <td>99th Percentile Latency</td>
+                <td>{{ "%.2f"|format(p99_latency) }} seconds</td>
+            </tr>
+            <tr>
+                <td>Average Queued Time</td>
+                <td>{{ "%.2f"|format(avg_queued_time) }} ms</td>
+            </tr>
+            <tr>
+                <td>Average Analysis Time</td>
+                <td>{{ "%.2f"|format(avg_analysis_time) }} ms</td>
+            </tr>
+            <tr>
+                <td>Average Planning Time</td>
+                <td>{{ "%.2f"|format(avg_planning_time) }} ms</td>
+            </tr>
+            <tr>
+                <td>Error Rate</td>
+                <td>{{ "%.2f"|format(error_rate) }}%</td>
+            </tr>
+            <tr>
+                <td>Throughput</td>
+                <td>{{ "%.2f"|format(throughput) }} requests/second</td>
+            </tr>
+        </table>
+
+        <h2 class="mt-5">Individual Query Results</h2>
+        {% for kpi in kpi_results %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <strong>Query:</strong> {{ kpi.query }}
+            </div>
+            <div class="card-body">
+                <p><strong>Latency:</strong> {{ "%.2f"|format(kpi.latency) }} seconds</p>
+                <h5>Additional Metrics:</h5>
+                <ul>
+                    {% for key, value in kpi.additional_metrics.items() %}
+                    {% if key == 'query_id' %}
+                        <li><strong>Query ID:</strong> <a href="https://cognitum-fabric-uat-jpmchase.net/ui/query.html?{{value}}">{{ value }}</a></li>
+                    {% else %}
+                        <li><strong>{{ key }}:</strong> {{ value }}</li>
+                    {% endif %}
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endfor %}
+
+        <a href="/" class="btn btn-primary mb-5">Run Another Test</a>
+    </div>
+</body>
+</html>
