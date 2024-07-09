@@ -83,7 +83,7 @@
                 <ul>
                     {% for key, value in kpi.additional_metrics.items() %}
                     {% if key == 'query_id' %}
-                        <li><strong>Query ID:</strong> <a href="https://cognitum-fabric-uat-jpmchase.net/ui/query.html?{{value}}">{{ value }}</a></li>
+                        <li><strong>Query ID:</strong> <a href="#">{{ value }}</a></li>
                     {% else %}
                         <li><strong>{{ key }}:</strong> {{ value }}</li>
                     {% endif %}
