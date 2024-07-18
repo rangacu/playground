@@ -1,0 +1,120 @@
+import time
+import mysql.connector
+import pyodbc
+import trino
+from flask import Flask, render_template, request, jsonify
+from datetime import datetime
+
+app = Flask(__name__)
+
+# Database connection functions
+def connect_trino():
+    return trino.dbapi.connect(
+        host="trino_host",
+        port=8080,
+        user="trino_user",
+        catalog="your_catalog",
+        schema="your_schema"
+    )
+
+def connect_sqlserver():
+    return pyodbc.connect('DRIVER={ODBC Driver 17 for SQL Server};'
+                          'SERVER=your_server;'
+                          'DATABASE=your_database;'
+                          'UID=your_username;'
+                          'PWD=your_password')
+
+def connect_mysql():
+    return mysql.connector.connect(
+        host="mysql_host",
+        user="mysql_user",
+        password="mysql_password",
+        database="metrics_db"
+    )
+
+# Function to execute query and capture metrics
+def execute_query(connection, query, db_type):
+    start_time = time.time()
+    cursor = connection.cursor()
+    cursor.execute(query)
+    results = cursor.fetchall()
+    end_time = time.time()
+    
+    latency = end_time - start_time
+    row_count = len(results)
+    
+    return {
+        "latency": latency,
+        "row_count": row_count,
+        "db_type": db_type
+    }
+
+# Function to save metrics to MySQL
+def save_metrics(metrics):
+    conn = connect_mysql()
+    cursor = conn.cursor()
+    
+    insert_query = """
+    INSERT INTO query_metrics 
+    (query, db_type, latency, row_count, timestamp) 
+    VALUES (%s, %s, %s, %s, %s)
+    """
+    
+    values = (
+        metrics['query'],
+        metrics['db_type'],
+        metrics['latency'],
+        metrics['row_count'],
+        datetime.now()
+    )
+    
+    cursor.execute(insert_query, values)
+    conn.commit()
+    
+    cursor.close()
+    conn.close()
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/run_query', methods=['POST'])
+def run_query():
+    query = request.form['query']
+    
+    # Execute query on Trino
+    trino_conn = connect_trino()
+    trino_metrics = execute_query(trino_conn, query, 'Trino')
+    trino_conn.close()
+    
+    # Execute query on SQL Server
+    sqlserver_conn = connect_sqlserver()
+    sqlserver_metrics = execute_query(sqlserver_conn, query, 'SQL Server')
+    sqlserver_conn.close()
+    
+    # Save metrics to MySQL
+    trino_metrics['query'] = query
+    sqlserver_metrics['query'] = query
+    save_metrics(trino_metrics)
+    save_metrics(sqlserver_metrics)
+    
+    return jsonify({
+        'trino': trino_metrics,
+        'sqlserver': sqlserver_metrics
+    })
+
+@app.route('/history')
+def history():
+    conn = connect_mysql()
+    cursor = conn.cursor(dictionary=True)
+    
+    cursor.execute("SELECT * FROM query_metrics ORDER BY timestamp DESC")
+    history = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    return render_template('history.html', history=history)
+
+if __name__ == '__main__':
+    app.run(debug=True)
