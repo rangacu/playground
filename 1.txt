@@ -74,6 +74,27 @@ def save_metrics(metrics):
     cursor.close()
     conn.close()
 
+def initialize_database():
+    conn = connect_mysql()
+    cursor = conn.cursor()
+    
+    create_table_query = """
+    CREATE TABLE IF NOT EXISTS query_metrics (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        query TEXT NOT NULL,
+        db_type VARCHAR(50) NOT NULL,
+        latency FLOAT NOT NULL,
+        row_count INT NOT NULL,
+        timestamp DATETIME NOT NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    """
+    
+    cursor.execute(create_table_query)
+    conn.commit()
+    
+    cursor.close()
+    conn.close()
+
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -117,4 +138,5 @@ def history():
     return render_template('history.html', history=history)
 
 if __name__ == '__main__':
+    initialize_database()
     app.run(debug=True)
