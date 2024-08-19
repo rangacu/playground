@@ -1,0 +1,179 @@
+{
+  "users": [
+    {
+      "user": "anand",
+      "access": [
+        {
+          "catalog": "tpcds",
+          "schemas": [
+            {
+              "schema": "sf100",
+              "tables": [
+                {
+                  "table": "customer",
+                  "actions": ["select"],
+                  "columns": ["c_customer_sk", "c_first_name", "c_last_name"]
+                },
+                {
+                  "table": "store_sales",
+                  "actions": ["select"],
+                  "columns": ["ss_item_sk", "ss_quantity", "ss_list_price"]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "catalog": "system",
+          "schemas": [
+            {
+              "schema": "jdbc",
+              "tables": [
+                {
+                  "table": "catalogs",
+                  "actions": ["select"],
+                  "columns": ["catalog_name"]
+                },
+                {
+                  "table": "schemas",
+                  "actions": ["select"],
+                  "columns": ["catalog_name", "schema_name"]
+                },
+                {
+                  "table": "types",
+                  "actions": ["select"],
+                  "columns": ["type_name", "type_category", "type_precision"]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user": "admin",
+      "access": [
+        {
+          "catalog": "tpcds",
+          "schemas": [
+            {
+              "schema": "sf100",
+              "tables": [
+                {
+                  "table": "customer",
+                  "actions": ["select", "insert", "update", "delete"],
+                  "columns": [
+                    "c_customer_sk",
+                    "c_first_name",
+                    "c_last_name",
+                    "c_birth_day"
+                  ]
+                },
+                {
+                  "table": "store_sales",
+                  "actions": ["select", "insert", "update", "delete"],
+                  "columns": [
+                    "ss_item_sk",
+                    "ss_quantity",
+                    "ss_list_price",
+                    "ss_wholesale_cost"
+                  ]
+                }
+              ]
+            },
+            {
+              "schema": "sf200",
+              "tables": [
+                {
+                  "table": "store_returns",
+                  "actions": ["select", "insert", "update", "delete"],
+                  "columns": [
+                    "sr_returned_date_sk",
+                    "sr_item_sk",
+                    "sr_return_quantity"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "catalog": "system",
+          "schemas": [
+            {
+              "schema": "jdbc",
+              "tables": [
+                {
+                  "table": "catalogs",
+                  "actions": ["select", "insert", "update", "delete"],
+                  "columns": ["catalog_name"]
+                },
+                {
+                  "table": "schemas",
+                  "actions": ["select", "insert", "update", "delete"],
+                  "columns": ["catalog_name", "schema_name"]
+                },
+                {
+                  "table": "types",
+                  "actions": ["select", "insert", "update", "delete"],
+                  "columns": ["type_name", "type_category", "type_precision"]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "user": "ranga",
+      "access": [
+        {
+          "catalog": "tpcds",
+          "schemas": [
+            {
+              "schema": "sf1000",
+              "tables": [
+                {
+                  "table": "catalog_sales",
+                  "actions": ["select"],
+                  "columns": [
+                    "cs_sold_date_sk",
+                    "cs_item_sk",
+                    "cs_order_number",
+                    "cs_sold_time_sk",
+                    "cs_ship_date_sk"
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "catalog": "system",
+          "schemas": [
+            {
+              "schema": "jdbc",
+              "tables": [
+                {
+                  "table": "catalogs",
+                  "actions": ["select"],
+                  "columns": ["catalog_name"]
+                },
+                {
+                  "table": "schemas",
+                  "actions": ["select"],
+                  "columns": ["catalog_name", "schema_name"]
+                },
+                {
+                  "table": "types",
+                  "actions": ["select"],
+                  "columns": ["type_name", "type_category", "type_precision"]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
