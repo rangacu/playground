@@ -1,0 +1,20 @@
+WITH ordered_response AS (
+    SELECT
+        response_time,
+        ROW_NUMBER() OVER (ORDER BY response_time) AS row_num,
+        COUNT(*) OVER () AS total_rows
+    FROM request
+)
+SELECT
+    MAX(CASE WHEN row_num <= total_rows * 0.50 THEN response_time END) AS p50,
+    MAX(CASE WHEN row_num <= total_rows * 0.66 THEN response_time END) AS p66,
+    MAX(CASE WHEN row_num <= total_rows * 0.75 THEN response_time END) AS p75,
+    MAX(CASE WHEN row_num <= total_rows * 0.80 THEN response_time END) AS p80,
+    MAX(CASE WHEN row_num <= total_rows * 0.90 THEN response_time END) AS p90,
+    MAX(CASE WHEN row_num <= total_rows * 0.95 THEN response_time END) AS p95,
+    MAX(CASE WHEN row_num <= total_rows * 0.98 THEN response_time END) AS p98,
+    MAX(CASE WHEN row_num <= total_rows * 0.99 THEN response_time END) AS p99,
+    MAX(CASE WHEN row_num <= total_rows * 0.999 THEN response_time END) AS p999,
+    MAX(CASE WHEN row_num <= total_rows * 0.9999 THEN response_time END) AS p9999,
+    MAX(response_time) AS p100
+FROM ordered_response;
