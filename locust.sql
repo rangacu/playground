@@ -23,6 +23,7 @@ CREATE TABLE `request` (
   `pid` int DEFAULT NULL,
   `context` json DEFAULT NULL,
   `url` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  'trino_queryid' varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   KEY `idx_request_time` (`time` DESC),
   KEY `idx_request_run_id` (`run_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
